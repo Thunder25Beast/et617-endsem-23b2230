@@ -37,52 +37,76 @@ Feedback is kind, simple Hindi with English maths words. Never say "incorrect" o
 
 async function callGemini(system: string, user: string): Promise<unknown> {
   const key = process.env.GEMINI_API_KEY;
-  let model = process.env.LLM_MODEL || "gemini-1.5-flash";
-  if (model.includes("2.5")) model = "gemini-1.5-flash";
   if (!key) throw new Error("GEMINI_API_KEY missing");
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), UPSTREAM_TIMEOUT_MS);
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-goog-api-key": key },
-        signal: ctrl.signal,
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: system }] },
-          contents: [{ role: "user", parts: [{ text: user }] }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.6, maxOutputTokens: 400 },
-        }),
-      },
-    );
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => "");
-      throw new Error(`gemini ${res.status}: ${errBody.slice(0, 120)}`);
+  // Free Tier models: Gemini 3.8 Flash (primary), 3.5 Flash-Lite, 1.5 Flash, 2.5 Flash-Lite
+  const envModel = process.env.LLM_MODEL;
+  const models = Array.from(
+    new Set(
+      [
+        envModel && envModel !== "gemini-2.5-flash" ? envModel : null,
+        "gemini-3.8-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-1.5-flash",
+        "gemini-2.5-flash-lite",
+      ].filter(Boolean) as string[],
+    ),
+  );
+
+  let lastError = "No model responded";
+  for (const model of models) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), UPSTREAM_TIMEOUT_MS);
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-goog-api-key": key },
+          signal: ctrl.signal,
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: system }] },
+            contents: [{ role: "user", parts: [{ text: user }] }],
+            generationConfig: { responseMimeType: "application/json", temperature: 0.6, maxOutputTokens: 400 },
+          }),
+        },
+      );
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => "");
+        lastError = `gemini [${model}] ${res.status}: ${errBody.slice(0, 120)}`;
+        if (res.status === 404) {
+          // If this model is not available, try the next free tier model
+          continue;
+        }
+        throw new Error(lastError);
+      }
+      const out = (await res.json()) as {
+        candidates?: { content?: { parts?: { text?: string }[] } }[];
+      };
+      const text = out.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      return JSON.parse(text);
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") throw e;
+      if (model === models[models.length - 1]) throw e;
+    } finally {
+      clearTimeout(timer);
     }
-    const out = (await res.json()) as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
-    };
-    const text = out.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    return JSON.parse(text);
-  } finally {
-    clearTimeout(timer);
   }
+  throw new Error(lastError);
 }
 
 export default async function handler(req: Request): Promise<Response> {
   // GET /api/ai → diagnostic: is the key set? (never reveals the actual key)
   if (req.method === "GET") {
     const key = process.env.GEMINI_API_KEY ?? "";
-    let model = process.env.LLM_MODEL || "gemini-1.5-flash";
-  if (model.includes("2.5")) model = "gemini-1.5-flash";
+    const primaryModel = process.env.LLM_MODEL || "gemini-3.8-flash";
     return json(200, {
       ok: true,
       keySet: key.length > 0,
       keyPrefix: key.slice(0, 8) + "…",
       keyLength: key.length,
-      model,
+      primaryModel,
+      supportedModels: ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-1.5-flash", "gemini-2.5-flash-lite"],
       env: Object.keys(process.env).filter(k => k.includes("GEMINI") || k.includes("LLM")).sort(),
     });
   }

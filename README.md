@@ -37,7 +37,7 @@ bun run build
 | Name | Purpose |
 | --- | --- |
 | `GEMINI_API_KEY` | Gemini API key. Set it in Vercel project settings. Never commit it. |
-| `LLM_MODEL` | Model name, e.g. `gemini-1.5-flash` (the default) or `gemini-2.0-flash`. |
+| `LLM_MODEL` | Model name, e.g. `gemini-3.8-flash` (the default), `gemini-3.5-flash-lite`, or `gemini-1.5-flash`. Auto-falls back across free tier models if one is unavailable. |
 
 The Lovable preview has no `/api/ai`, so the app runs its labelled fallback there. "Demo mode" in About
 uses recorded AI replies (`src/data/demoAi.ts`), labelled "Demo response".
