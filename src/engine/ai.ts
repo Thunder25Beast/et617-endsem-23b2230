@@ -1,4 +1,4 @@
-// AI client. AI is OPTIONAL: every call has a 5 second timeout, a body under 2 KB and NO retry.
+// AI client. AI is OPTIONAL: every call has an 8 second timeout, a body under 2 KB and NO retry.
 // If anything goes wrong (offline, slow, error, bad JSON, invalid content) we return { ok: false }
 // and the caller silently uses the local fallback. The banner is switched on here.
 //

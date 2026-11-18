@@ -224,7 +224,7 @@ export const STR = {
   aiTitle: { hi: "AI क्या करता है", en: "What the AI does" },
   ai1: { hi: "नए सवाल बनाता है (सिर्फ़ नंबर और शब्द)। सही जवाब हमेशा app खुद निकालता है।", en: "Writes new questions (numbers and words only). The app always computes the correct answer itself." },
   ai2: { hi: "बच्चे की लिखी बात पढ़कर बताता है: sound, M1, M2, partial या unclear।", en: "Reads the learner's explanation and labels it: sound, M1, M2, partial or unclear." },
-  ai3: { hi: "हर call: 5 सेकंड की सीमा, 2 KB से छोटा, दोबारा कोशिश नहीं।", en: "Every call: 5 second limit, under 2 KB, no retry." },
+  ai3: { hi: "हर call: 8 सेकंड की सीमा, 2 KB से छोटा, दोबारा कोशिश नहीं।", en: "Every call: 8 second limit, under 2 KB, no retry." },
   aiFailTitle: { hi: "AI न चले तो", en: "When the AI fails" },
   aiFail1: { hi: "app चुपचाप सेव किए हुए सवालों पर चलता है और ऊपर पट्टी दिखाता है।", en: "The app silently switches to saved questions and shows a banner." },
   aiFail2: { hi: "लिखी बात को tablet खुद keywords से जाँचता है। AI और tablet की राय न मिले तो: 'दीदी या भैया से पूछो'।", en: "The tablet checks explanations with keywords. If AI and tablet disagree: 'Ask didi or bhaiya'." },

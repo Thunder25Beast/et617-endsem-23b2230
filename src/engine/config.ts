@@ -33,7 +33,7 @@ export const CONFIG = {
   // ---- AI (engine/ai.ts) ----
 
   /** Every AI call is cancelled after this many milliseconds. No retry. */
-  AI_TIMEOUT_MS: 5000,
+  AI_TIMEOUT_MS: 8000,
   /** Request body must be smaller than this many bytes, otherwise we do not send it. */
   AI_MAX_PAYLOAD_BYTES: 2048,
   /** AI explanation judgement is used only if the model is at least this confident. */

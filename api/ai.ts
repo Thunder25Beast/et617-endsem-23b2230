@@ -9,7 +9,7 @@
 export const config = { runtime: "edge" };
 
 const MAX_BODY = 2048; // bytes, same limit as the client
-const UPSTREAM_TIMEOUT_MS = 4500; // a little under the client's 5 s timeout
+const UPSTREAM_DEADLINE_MS = 7000; // whole model cascade, a little under the client's 8 s timeout
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), {
@@ -49,50 +49,86 @@ async function callGemini(system: string, user: string): Promise<unknown> {
         "gemini-3.6-flash",
         "gemini-3.5-flash-lite",
         "gemini-3.1-flash-lite",
-        "gemini-1.5-flash",
+        "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
       ].filter(Boolean) as string[],
     ),
   );
 
+  // Newer Flash models "think" before answering, and thinking tokens count against
+  // maxOutputTokens. With a small limit the JSON came back cut off or empty, JSON.parse
+  // failed on every model and the client always fell back. So: ask for minimal thinking,
+  // leave plenty of output room, and if a model rejects the thinking option, retry it plain.
+  const thinkingFor = (model: string): Record<string, unknown> | null => {
+    if (/^gemini-3/.test(model)) return { thinkingLevel: "low" };
+    if (/^gemini-2\.5-flash/.test(model)) return { thinkingBudget: 0 };
+    return null;
+  };
+
+  const deadline = Date.now() + UPSTREAM_DEADLINE_MS;
   let lastError = "No model responded";
+
   for (const model of models) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), UPSTREAM_TIMEOUT_MS);
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-goog-api-key": key },
-          signal: ctrl.signal,
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: system }] },
-            contents: [{ role: "user", parts: [{ text: user }] }],
-            generationConfig: { responseMimeType: "application/json", temperature: 0.6, maxOutputTokens: 400 },
-          }),
-        },
-      );
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => "");
-        lastError = `gemini [${model}] ${res.status}: ${errBody.slice(0, 120)}`;
-        // If 404 (model not found), 503 (model temporarily overloaded), or 429 (rate limited),
-        // try the next free tier model in the cascade immediately
-        if (res.status === 404 || res.status === 503 || res.status === 429) {
-          continue;
+    const thinking = thinkingFor(model);
+    for (const useThinking of thinking ? [true, false] : [false]) {
+      const left = deadline - Date.now();
+      if (left < 500) throw new Error(`deadline reached; last: ${lastError}`);
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), left);
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-goog-api-key": key },
+            signal: ctrl.signal,
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: system }] },
+              contents: [{ role: "user", parts: [{ text: user }] }],
+              generationConfig: {
+                responseMimeType: "application/json",
+                temperature: 0.6,
+                maxOutputTokens: 2048,
+                ...(useThinking && thinking ? { thinkingConfig: thinking } : {}),
+              },
+            }),
+          },
+        );
+        if (!res.ok) {
+          const errBody = await res.text().catch(() => "");
+          lastError = `gemini [${model}] ${res.status}: ${errBody.slice(0, 160)}`;
+          console.warn(lastError);
+          // 400 with thinkingConfig: the model may not support that option -> retry plain.
+          if (res.status === 400 && useThinking) continue;
+          // 400/403/404/429/5xx: try the next model in the cascade.
+          break;
         }
-        throw new Error(lastError);
+        const out = (await res.json()) as {
+          candidates?: { finishReason?: string; content?: { parts?: { text?: string; thought?: boolean }[] } }[];
+        };
+        const cand = out.candidates?.[0];
+        // Join the answer parts, skipping any thought-summary parts.
+        const text = (cand?.content?.parts ?? [])
+          .filter((p) => !p.thought && typeof p.text === "string")
+          .map((p) => p.text)
+          .join("")
+          .trim()
+          .replace(/^```(?:json)?\s*/i, "")
+          .replace(/\s*```$/, "");
+        try {
+          return JSON.parse(text);
+        } catch {
+          lastError = `gemini [${model}] bad JSON (finish ${cand?.finishReason ?? "?"}): ${text.slice(0, 80)}`;
+          console.warn(lastError);
+          break;
+        }
+      } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") throw new Error(`timeout; last: ${lastError}`);
+        lastError = `gemini [${model}] ${e instanceof Error ? e.message : "fetch failed"}`;
+        break;
+      } finally {
+        clearTimeout(timer);
       }
-      const out = (await res.json()) as {
-        candidates?: { content?: { parts?: { text?: string }[] } }[];
-      };
-      const text = out.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-      return JSON.parse(text);
-    } catch (e) {
-      if (e instanceof Error && e.name === "AbortError") throw e;
-      if (model === models[models.length - 1]) throw e;
-    } finally {
-      clearTimeout(timer);
     }
   }
   throw new Error(lastError);
@@ -106,10 +142,9 @@ export default async function handler(req: Request): Promise<Response> {
     return json(200, {
       ok: true,
       keySet: key.length > 0,
-      keyPrefix: key.slice(0, 8) + "…",
       keyLength: key.length,
       primaryModel,
-      supportedModels: ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-1.5-flash", "gemini-2.5-flash-lite"],
+      supportedModels: ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
       env: Object.keys(process.env).filter(k => k.includes("GEMINI") || k.includes("LLM")).sort(),
     });
   }
