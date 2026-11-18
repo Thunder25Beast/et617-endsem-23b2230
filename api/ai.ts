@@ -37,7 +37,8 @@ Feedback is kind, simple Hindi with English maths words. Never say "incorrect" o
 
 async function callGemini(system: string, user: string): Promise<unknown> {
   const key = process.env.GEMINI_API_KEY;
-  const model = process.env.LLM_MODEL || "gemini-1.5-flash";
+  let model = process.env.LLM_MODEL || "gemini-1.5-flash";
+  if (model.includes("2.5")) model = "gemini-1.5-flash";
   if (!key) throw new Error("GEMINI_API_KEY missing");
 
   const ctrl = new AbortController();
@@ -71,6 +72,20 @@ async function callGemini(system: string, user: string): Promise<unknown> {
 }
 
 export default async function handler(req: Request): Promise<Response> {
+  // GET /api/ai → diagnostic: is the key set? (never reveals the actual key)
+  if (req.method === "GET") {
+    const key = process.env.GEMINI_API_KEY ?? "";
+    let model = process.env.LLM_MODEL || "gemini-1.5-flash";
+  if (model.includes("2.5")) model = "gemini-1.5-flash";
+    return json(200, {
+      ok: true,
+      keySet: key.length > 0,
+      keyPrefix: key.slice(0, 8) + "…",
+      keyLength: key.length,
+      model,
+      env: Object.keys(process.env).filter(k => k.includes("GEMINI") || k.includes("LLM")).sort(),
+    });
+  }
   if (req.method !== "POST") return json(405, { ok: false, error: "POST only" });
 
   const raw = await req.text();
