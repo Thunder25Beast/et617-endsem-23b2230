@@ -20,6 +20,7 @@ const byteLen = (s: string) => enc.encode(s).length;
 
 function fail<T>(reason: string, opts: { slow?: boolean; banner?: boolean } = {}): AiResult<T> {
   const banner = opts.banner ?? true;
+  console.warn("[Ank Saathi AI Fallback]:", reason);
   if (banner) setSession({ fallbackActive: true, skipLeft: CONFIG.AI_SKIP_AFTER_FAIL, slowNet: opts.slow ?? getSession().slowNet });
   return { ok: false, reason };
 }
@@ -125,13 +126,16 @@ export function fitsLevel(skill: SkillId, level: Level, format: Format, a: numbe
 export function validateQuestion(raw: unknown, want: GenRequest, why: L): Question | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
-  const format = r["format"] as Format;
+  const format = String(r["format"] ?? "").trim() as Format;
   if (!AI_FORMATS.includes(format) || format !== want.format) return null;
   if (!str(r["stem_hi"]) || !str(r["stem_en"]) || !str(r["hint1"], 200) || !str(r["hint2"], 200)) return null;
   const n = r["numbers"] as Record<string, unknown> | undefined;
-  if (!n || !isInt(n["a"]) || !isInt(n["b"])) return null;
-  const a = n["a"];
-  const b = n["b"];
+  if (!n) return null;
+  const rawA = n["a"];
+  const rawB = n["b"];
+  const a = typeof rawA === "number" ? Math.round(rawA) : typeof rawA === "string" ? parseInt(rawA, 10) : NaN;
+  const b = typeof rawB === "number" ? Math.round(rawB) : typeof rawB === "string" ? parseInt(rawB, 10) : NaN;
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
   const op = n["operation"] === "-" ? "-" : "+";
   if (!fitsLevel(want.skill, want.level, format, a, b, op)) return null;
   if (want.avoid.includes(signature(format, a, b, op))) return null; // no repeats of the last 5
