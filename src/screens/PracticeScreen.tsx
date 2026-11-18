@@ -108,12 +108,16 @@ function Task({ q, learnerId, qCount }: { q: Question; learnerId: string; qCount
   const submit = async () => {
     if (!response || busy) return;
     setBusy(true);
-    const seconds = Math.max(1, Math.round((Date.now() - started.current) / 1000));
-    const l = getData().learners.find((x) => x.id === learnerId);
-    if (!l) return;
-    const graded = await gradeAnswer(l, q, response);
-    commitAttempt(learnerId, q, response, graded, { hints, seconds, lineUsed: lineUsed || scratch !== null });
-    setBusy(false);
+    try {
+      const seconds = Math.max(1, Math.round((Date.now() - started.current) / 1000));
+      const l = getData().learners.find((x) => x.id === learnerId);
+      if (!l) return;
+      const graded = await gradeAnswer(l, q, response);
+      commitAttempt(learnerId, q, response, graded, { hints, seconds, lineUsed: lineUsed || scratch !== null });
+    } finally {
+      // never leave the Check button stuck on "Checking…"
+      setBusy(false);
+    }
   };
 
   const next = () => {

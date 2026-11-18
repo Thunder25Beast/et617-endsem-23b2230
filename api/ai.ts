@@ -22,14 +22,25 @@ const json = (status: number, body: unknown) =>
 
 const QUESTION_RULES = `You write ONE practice question for a 12 year old Class 7 learner in Mumbai (Hindi medium) about integers.
 Return ONLY JSON with keys: format, stem_hi, stem_en, numbers {a, b, operation}, hint1, hint2, hint1_en, hint2_en.
-Rules:
-- format must equal the wanted format.
-- a and b are integers from -20 to 20. operation is "+" or "-" ("compare" for compare, "place" for numberline).
-- skill S0: numberline, place a negative number a. S1: compare, ask which is greater of a and b. S2: addition. S3: subtraction.
-- level 1: numbers within -10 to 10. level 2: mixed signs. level 3: subtracting a negative or a story with udhaar (debt), lift floors or temperature.
-- Do not repeat any question listed in "avoid".
+Rules (the app rejects any question that breaks one, so follow all of them):
+- format must equal the wanted format. a and b are integers from -20 to 20.
+- operation: "+" or "-" for numeric and story; "compare" for compare; "place" for numberline.
+- S0 (numberline): a is negative. Ask the learner to tap a on the number line. b = 0.
+- S1 (compare): a != b and at least one is negative. Ask ONLY "Which number is greater?" (never ask for the smaller one).
+- S2: operation "+". S3: operation "-".
+- level 1: every number, including the result, from -10 to 10, and at least one of a, b or the result is negative.
+- level 2 (S2/S3): a and b have different signs, or both are negative.
+- level 3: S3 must subtract a negative (b < 0) or be a story. S2 any.
+- The answer the app checks is exactly a + b or a - b, as a signed number. So the question must ask for that signed
+  value, e.g. "What is the balance now?", "Which floor is the lift on now?", "What is the temperature now?".
+  Never ask "how much does he owe", "how many floors down", "how far", "how much less" or "what is the difference".
+- Numeric format: show the sum itself, e.g. "Solve: -4 + 7 = ?" or "Find 6 - (-2)". Put negative b in brackets.
+- Story format: one or two short sentences set in the given context, then ONE question. Write every number as digits.
+  The story must lead to exactly a (operation) b, and both |a| and |b| must appear in stem_en.
+- stem_en ends with exactly one "?". stem_hi says the same thing as stem_en.
+- Do not repeat any question listed in "avoid" and do not reuse the same numbers.
 - stem_hi in simple Hindi (Devanagari) with English maths words like plus, minus, number line. Short sentences. Max 30 words.
-- Do NOT include the answer. Hints are short (max 15 words) and never give the final answer.`;
+- Do NOT include the answer anywhere. Hints are short (max 15 words), match these exact numbers, and never give the final answer.`;
 
 const EVAL_RULES = `You judge a 12 year old learner's short explanation about integers.
 Return ONLY JSON: {"label": one of "sound","M1","M2","partial","unclear", "confidence": number 0..1, "feedback_hi": string under 25 words, "feedback_en": string under 25 words}.
@@ -79,7 +90,7 @@ async function callGemini(system: string, user: string): Promise<unknown> {
               contents: [{ role: "user", parts: [{ text: user }] }],
               generationConfig: {
                 responseMimeType: "application/json",
-                temperature: 0.6,
+                temperature: 0.9,
                 maxOutputTokens: 2048,
                 ...(useThinking && thinking ? { thinkingConfig: thinking } : {}),
               },
@@ -212,6 +223,8 @@ export default async function handler(req: Request): Promise<Response> {
         last5: p.last5,
         misconception: p.misconception,
         avoid: p.avoid,
+        story_context: typeof p.context === "string" ? p.context.slice(0, 80) : undefined,
+        variety_seed: Math.floor(Math.random() * 1e6), // nudges the model away from its favourite numbers
       })}`;
       const data = await callGemini(QUESTION_RULES, user);
       return json(200, { ok: true, data });

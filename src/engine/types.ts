@@ -113,8 +113,10 @@ export interface Attempt {
   response: string;
   remediation: boolean;
   isTwin: boolean;
-  /** e.g. "numeric:5-3", used so the AI does not repeat the last 5 questions */
+  /** e.g. "numeric:5-3", used so the AI does not repeat recent questions */
   sig: string;
+  /** numbersKey(a, b, list): the bank does not show the same numbers on an item twice */
+  nums?: string;
 }
 
 export type RuleId = "START" | "PREREQ" | "ALT" | "HARDER" | "SAME" | "REMEDIATION" | "RETURN";

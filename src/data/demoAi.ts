@@ -25,8 +25,8 @@ export const DEMO_QUESTIONS: unknown[] = [
   },
   {
     format: "story",
-    stem_hi: "तुम पर ₹9 का उधार है (-9)। तुमने ₹4 चुका दिए। अब कितना उधार है?",
-    stem_en: "You owe ₹9 (-9). You pay back ₹4. How much do you owe now?",
+    stem_hi: "तुम पर ₹9 का उधार है, यानी balance -9 है। तुमने ₹4 चुका दिए। अब तुम्हारा balance कितना है?",
+    stem_en: "You owe ₹9, so your balance is -9. You pay back ₹4. What is your balance now?",
     numbers: { a: -9, b: 4, operation: "+" },
     hint1: "उधार minus है, पैसे देना plus।",
     hint2: "-9 से 4 कदम दाएँ।",

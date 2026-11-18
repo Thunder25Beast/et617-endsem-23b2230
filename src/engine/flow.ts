@@ -6,12 +6,29 @@ import { STR } from "@/data/i18n";
 import { AI_FORMATS, aiEvaluate, aiGenerateQuestion, signature } from "./ai";
 import { CONFIG } from "./config";
 import { explainGrade, grade, labelGroup, localExplain, type Grade } from "./checker";
-import { decide, nextFromBank } from "./selector";
+import { decide, nextFromBank, numbersKey } from "./selector";
 import { getData, logEvent, newId, updateLearner, type FeedbackRecord, type Learner } from "./storage";
 import { tq } from "./text";
 import type { Attempt, Decision, L, Question, Response } from "./types";
 
 const NO_AI_RULES = new Set(["ALT", "PREREQ", "REMEDIATION"]);
+
+/** Real-life settings for AI story questions. Rotating them keeps stories from all sounding the same. */
+const CONTEXTS = [
+  "money: udhaar (debt) at a kirana shop",
+  "a mall lift with basement floors",
+  "temperature in a hill town at night",
+  "points won and lost in a school quiz",
+  "a diver or submarine below sea level",
+  "runs and penalty runs in a gully cricket game",
+  "steps forward and back on a number line game",
+  "a bank balance with deposits and withdrawals",
+];
+
+function pickContext(l: Learner): string {
+  const i = (l.engine.attempts.length + Math.floor(Math.random() * 3)) % CONTEXTS.length;
+  return CONTEXTS[i] as string;
+}
 
 /** The first decision of a practice session (uses only the profile signal). */
 export function startSession(l: Learner): Decision {
@@ -33,16 +50,20 @@ export async function buildNext(l: Learner, decision: Decision): Promise<Questio
   if (NO_AI_RULES.has(decision.rule) || !AI_FORMATS.includes(bankQ.format)) return bankQ;
 
   const last = l.engine.attempts.slice(-CONFIG.NO_REPEAT_LAST);
+  const allSigs = new Set(l.engine.attempts.map((a) => a.sig));
   const res = await aiGenerateQuestion(
     {
       skill: bankQ.skill,
       level: bankQ.level,
       format: bankQ.format,
       last5: last.map((a) => ({ f: a.format, ok: a.correct, tag: a.tag })),
-      avoid: last.map((a) => a.sig),
+      // the model sees the most recent ones; the validator checks against every one this session
+      avoid: [...allSigs].slice(-CONFIG.AI_AVOID_SENT),
       misconception: last.at(-1)?.tag ?? null,
+      context: pickContext(l),
     },
     decision.reason,
+    allSigs,
   );
   logEvent(l.id, "ai_call", { action: "generate_question", ok: res.ok, reason: res.ok ? res.source : res.reason });
   if (!res.ok) return bankQ;
@@ -131,6 +152,7 @@ export function commitAttempt(
     remediation: q.remediation,
     isTwin: q.isTwin,
     sig: signature(q.format, q.a, q.b, q.op),
+    nums: numbersKey(q.a, q.b, q.list),
   };
   const { decision, state } = decide(l.engine, attempt, q);
   const record: FeedbackRecord = { q, attempt, decision, text: graded.text, judgedBy: graded.judgedBy, response: attempt.response };

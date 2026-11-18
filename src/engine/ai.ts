@@ -101,8 +101,43 @@ export interface GenRequest {
   level: Level;
   format: Format;
   last5: { f: Format; ok: boolean; tag: MisTag | null }[];
-  avoid: string[]; // signatures of the last 5 questions, e.g. "numeric:-3+5"
+  avoid: string[]; // signatures of recent questions, e.g. "numeric:-3+5"
   misconception: MisTag | null;
+  /** real-life setting for story questions, rotated by the client for variety */
+  context?: string;
+}
+
+/** Does the text contain this number as a whole number (so "3" does not match "13")? */
+const hasNum = (text: string, n: number) => new RegExp(`(^|[^0-9])${Math.abs(n)}([^0-9]|$)`).test(text);
+
+/**
+ * Reject AI questions a learner could read two ways. The app grades with its own numbers
+ * (a, b, op), so the text must ask for exactly that value. Returns null when the text is clear.
+ */
+export function clarityProblem(format: Format, stemEn: string, a: number, b: number, op: "+" | "-"): string | null {
+  const s = stemEn.toLowerCase();
+  // number line tasks are instructions ("Tap -6 on the number line."), so no "?" needed
+  if (format === "numberline") return hasNum(s, a) ? null : "number missing from text";
+  if (!s.includes("?")) return "no question mark";
+  if ((s.match(/\?/g) ?? []).length > 1) return "more than one question";
+  if (!hasNum(s, a) || !hasNum(s, b)) return "numbers missing from text";
+  if (format === "compare") {
+    // The app always grades compare as "which is GREATER", so the text must ask exactly that.
+    if (!/\b(greater|bigger|larger|more|higher|warmer)\b/.test(s)) return "compare does not ask for the greater number";
+    if (/\b(smaller|less|lesser|lower|colder|least)\b/.test(s)) return "compare asks for the smaller number";
+    return null;
+  }
+  const ans = op === "+" ? a + b : a - b;
+  if (new RegExp(`=\\s*\\(?${ans < 0 ? "-" : ""}${Math.abs(ans)}\\b`).test(s)) return "answer given in text";
+  if (format === "story") {
+    // The answer is a signed value ("balance is -5"). These phrasings expect a size without sign.
+    // Only the asking sentence matters ("You owe 9..." in the setup is fine).
+    const ask = s.slice(0, s.lastIndexOf("?")).split(/[.!।]\s*/).pop() ?? s;
+    if (/\b(owe|owes|owed|how many .*(down|below|left|lower|less)|how much .*(less|more|lost)|difference|how far)\b/.test(ask)) {
+      return "story asks for a size, not a signed value";
+    }
+  }
+  return null;
 }
 
 export const signature = (format: Format, a: number, b: number, op: string) => `${format}:${a}${op}${b}`;
@@ -126,7 +161,7 @@ export function fitsLevel(skill: SkillId, level: Level, format: Format, a: numbe
   return (op === "-" && b < 0) || format === "story" || skill === "S2";
 }
 
-export function validateQuestion(raw: unknown, want: GenRequest, why: L): Question | null {
+export function validateQuestion(raw: unknown, want: GenRequest, why: L, seen?: Set<string>): Question | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   const format = String(r["format"] ?? "").trim() as Format;
@@ -141,7 +176,13 @@ export function validateQuestion(raw: unknown, want: GenRequest, why: L): Questi
   if (Number.isNaN(a) || Number.isNaN(b)) return null;
   const op = n["operation"] === "-" ? "-" : "+";
   if (!fitsLevel(want.skill, want.level, format, a, b, op)) return null;
-  if (want.avoid.includes(signature(format, a, b, op))) return null; // no repeats of the last 5
+  const sig = signature(format, a, b, op);
+  if (want.avoid.includes(sig) || seen?.has(sig)) return null; // never repeat a question from this session
+  const unclear = clarityProblem(format, r["stem_en"] as string, a, b, op);
+  if (unclear) {
+    console.warn("[Ank Saathi AI] rejected unclear question:", unclear, r["stem_en"]);
+    return null;
+  }
 
   const hint1_en = typeof r["hint1_en"] === "string" ? (r["hint1_en"] as string) : (r["hint1"] as string);
   const hint2_en = typeof r["hint2_en"] === "string" ? (r["hint2_en"] as string) : (r["hint2"] as string);
@@ -180,11 +221,11 @@ export function validateQuestion(raw: unknown, want: GenRequest, why: L): Questi
   return q;
 }
 
-export async function aiGenerateQuestion(want: GenRequest, why: L): Promise<AiResult<Question>> {
+export async function aiGenerateQuestion(want: GenRequest, why: L, seen?: Set<string>): Promise<AiResult<Question>> {
   const res = await callAI(
     "generate_question",
     { ...want },
-    (raw) => validateQuestion(raw, want, why),
+    (raw) => validateQuestion(raw, want, why, seen),
     () => DEMO_QUESTIONS,
   );
   if (res.ok) res.data.source = res.source;

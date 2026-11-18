@@ -90,3 +90,60 @@ describe("quick check", () => {
     expect([p.startSkill, p.startLevel]).toEqual(["S1", 1]);
   });
 });
+
+// ---- variety and clarity (repeat + vague question fixes) ----
+import { clarityProblem, validateQuestion } from "@/engine/ai";
+import { DEMO_QUESTIONS } from "@/data/demoAi";
+import { nextFromBank, numbersKey, pickTemplate } from "@/engine/selector";
+
+describe("question variety", () => {
+  it("picks the least recently used item instead of repeating one", () => {
+    const pool = BANK.filter((x) => x.skill === "S2" && x.level === 1);
+    const lastUsed = new Map([[pool[0]!.id, 5]]);
+    const t = pickTemplate("S2", 1, { avoidIds: [], lastFormat: null, rng: () => 0, lastUsed });
+    expect(t.id).not.toBe(pool[0]!.id);
+  });
+
+  it("does not reuse numbers already seen on the same item", () => {
+    let s = base();
+    const seen = new Set<string>();
+    let r = 0;
+    const seq = () => ((r = (r * 9301 + 49297) % 233280), r / 233280);
+    for (let i = 0; i < 6; i++) {
+      const { decision } = decide(s, null, null);
+      const qq = nextFromBank(s, { ...decision, rule: "SAME" }, seq);
+      const key = `${qq.templateId}|${numbersKey(qq.a, qq.b, qq.list)}`;
+      expect(seen.has(key)).toBe(false);
+      seen.add(key);
+      s = { ...s, attempts: [...s.attempts, att({ templateId: qq.templateId, format: qq.format, nums: numbersKey(qq.a, qq.b, qq.list) })] };
+    }
+  });
+});
+
+describe("AI question clarity", () => {
+  it("rejects compare questions that ask for the smaller number", () => {
+    expect(clarityProblem("compare", "Which is smaller: -9 or -2?", -9, -2, "+")).not.toBeNull();
+    expect(clarityProblem("compare", "Which is greater: -9 or -2?", -9, -2, "+")).toBeNull();
+  });
+  it("rejects stories that ask for a size instead of a signed value", () => {
+    expect(clarityProblem("story", "You owe 9. You pay 4. How much do you owe now?", -9, 4, "+")).not.toBeNull();
+    expect(clarityProblem("story", "Your balance is -9. You pay 4. What is your balance now?", -9, 4, "+")).toBeNull();
+  });
+  it("rejects text missing a number or giving the answer", () => {
+    expect(clarityProblem("numeric", "Solve: 4 + ? = ?", 4, -6, "+")).not.toBeNull();
+    expect(clarityProblem("numeric", "Solve: 4 + (-6) = -2?", 4, -6, "+")).not.toBeNull();
+    expect(clarityProblem("numeric", "Solve: 4 + (-6) = ?", 4, -6, "+")).toBeNull();
+  });
+  it("every recorded demo question passes the stricter checks", () => {
+    for (const raw of DEMO_QUESTIONS) {
+      const r = raw as { format: string; stem_en: string; numbers: { a: number; b: number; operation: string } };
+      expect(clarityProblem(r.format as never, r.stem_en, r.numbers.a, r.numbers.b, r.numbers.operation === "-" ? "-" : "+"), r.stem_en).toBeNull();
+    }
+  });
+  it("rejects an AI question already seen this session", () => {
+    const raw = DEMO_QUESTIONS[0];
+    const want = { skill: "S2" as const, level: 1 as const, format: "numeric" as const, last5: [], avoid: [], misconception: null };
+    expect(validateQuestion(raw, want, why)).not.toBeNull();
+    expect(validateQuestion(raw, want, why, new Set(["numeric:-4+7"]))).toBeNull();
+  });
+});

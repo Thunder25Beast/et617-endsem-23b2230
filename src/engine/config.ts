@@ -42,6 +42,8 @@ export const CONFIG = {
   EXPLANATION_MAX_CHARS: 200,
   /** After an AI failure, skip AI for this many questions to save the learner's time and data. */
   AI_SKIP_AFTER_FAIL: 3,
+  /** How many past question signatures we send to the AI as "do not repeat" (all are checked locally). */
+  AI_AVOID_SENT: 15,
   /** An AI reply slower than this marks the network as "Slow". */
   SLOW_MS: 2500,
 

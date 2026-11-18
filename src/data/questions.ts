@@ -412,8 +412,8 @@ export const BANK: ItemTemplate[] = [
     op: "+",
     gen: { a: [-9, -4], b: [1, 3] },
     stem: {
-      hi: "Ramesh uncle की दुकान पर तुम्हारा ₹{absA} उधार है ({a})। तुमने ₹{absB} दे दिए। अब कितना उधार है? (उधार minus में लिखो)",
-      en: "At Ramesh uncle's shop you owe ₹{absA} ({a}). You pay ₹{absB}. How much do you owe now? (Write debt as minus)",
+      hi: "Ramesh uncle की दुकान पर तुम्हारा ₹{absA} उधार है, यानी balance {a}। तुमने ₹{absB} दे दिए। अब तुम्हारा balance कितना है? (उधार minus में लिखो)",
+      en: "At Ramesh uncle's shop you owe ₹{absA}, so your balance is {a}. You pay ₹{absB}. What is your balance now? (Write debt as minus)",
     },
     hints: [
       { hi: "उधार = minus। पैसे देना = plus। तो {a} + {b}।", en: "Debt = minus. Paying = plus. So {a} + {b}." },

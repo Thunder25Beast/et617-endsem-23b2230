@@ -278,9 +278,13 @@ function shuffle<T>(arr: T[], rng: Rng): T[] {
   return out;
 }
 
-/** Fresh numbers with the same structure (used for variants and twin questions). */
-export function freshNumbers(t: ItemTemplate, rng: Rng, avoid?: { a: number; b: number; list: number[] }) {
-  for (let tries = 0; tries < 30; tries++) {
+/** Key of one concrete number set, used to avoid showing the same numbers twice. */
+export const numbersKey = (a: number, b: number, list: number[]) => `${a},${b},${list.join(" ")}`;
+
+/** Fresh numbers with the same structure (used for variants and twin questions).
+ *  `seen` holds numbersKey()s already used on this item; we try hard not to repeat them. */
+export function freshNumbers(t: ItemTemplate, rng: Rng, avoid?: { a: number; b: number; list: number[] }, seen?: Set<string>) {
+  for (let tries = 0; tries < 60; tries++) {
     const a = t.gen.a ? randInt(rng, t.gen.a) : (t.a ?? 0);
     const b = t.gen.b ? randInt(rng, t.gen.b) : (t.b ?? 0);
     let list = t.gen.list ? t.gen.list.map((r) => randInt(rng, r)) : (t.list ?? []);
@@ -292,6 +296,8 @@ export function freshNumbers(t: ItemTemplate, rng: Rng, avoid?: { a: number; b: 
     if (t.format === "compare" && a === b) continue;
     const same = avoid && a === avoid.a && b === avoid.b && list.join() === avoid.list.join();
     if (same) continue;
+    // the first 40 tries also skip number sets the learner already saw (small ranges may run out)
+    if (seen && tries < 40 && seen.has(numbersKey(a, b, list))) continue;
     return { a, b, list };
   }
   return { a: t.a ?? 0, b: t.b ?? 0, list: t.list ?? [] };
@@ -305,11 +311,13 @@ export interface BuildOpts {
   isTwin?: boolean;
   remediation?: boolean;
   avoid?: { a: number; b: number; list: number[] };
+  /** number sets already shown on this item */
+  seen?: Set<string>;
 }
 
 /** Turn a bank item into a concrete question. */
 export function instantiate(t: ItemTemplate, o: BuildOpts): Question {
-  const nums = o.fresh ? freshNumbers(t, o.rng, o.avoid) : { a: t.a ?? 0, b: t.b ?? 0, list: t.list ?? [] };
+  const nums = o.fresh ? freshNumbers(t, o.rng, o.avoid, o.seen) : { a: t.a ?? 0, b: t.b ?? 0, list: t.list ?? [] };
   const op = t.op ?? "+";
   const q: Question = {
     uid: `${t.id}-${Date.now().toString(36)}-${Math.floor(o.rng() * 1e6).toString(36)}`,
@@ -348,7 +356,15 @@ export function instantiate(t: ItemTemplate, o: BuildOpts): Question {
 export function pickTemplate(
   skill: SkillId,
   level: Level,
-  opts: { avoidIds: string[]; lastFormat: Format | null; prefer?: Format[] | undefined; only?: Format[] | undefined; rng: Rng },
+  opts: {
+    avoidIds: string[];
+    lastFormat: Format | null;
+    prefer?: Format[] | undefined;
+    only?: Format[] | undefined;
+    rng: Rng;
+    /** templateId -> when it was last used; the least recently used item wins */
+    lastUsed?: Map<string, number>;
+  },
 ): ItemTemplate {
   let pool = BANK.filter((t) => t.skill === skill && t.level === level);
   if (opts.only) {
@@ -363,6 +379,13 @@ export function pickTemplate(
   if (opts.prefer?.length) {
     const preferred = pool.filter((t) => opts.prefer?.includes(t.format));
     if (preferred.length) pool = preferred;
+  }
+  // Least recently used first (never-used items count as oldest), random among ties.
+  // With only 1-5 items per level this stops the same item text coming back again and again.
+  if (opts.lastUsed && pool.length > 1) {
+    const when = (t: ItemTemplate) => opts.lastUsed?.get(t.id) ?? -1;
+    const oldest = Math.min(...pool.map(when));
+    pool = pool.filter((t) => when(t) === oldest);
   }
   return pool[Math.floor(opts.rng() * pool.length)] as ItemTemplate;
 }
@@ -379,6 +402,10 @@ export function nextFromBank(state: EngineState, decision: Decision, rng: Rng): 
   const seenIds = new Set(state.attempts.map((a) => a.templateId));
   const lastIds = state.attempts.slice(-CONFIG.NO_REPEAT_LAST).map((a) => a.templateId);
   const lastFormat = state.attempts.at(-1)?.format ?? null;
+  const lastUsed = new Map<string, number>();
+  state.attempts.forEach((a, i) => lastUsed.set(a.templateId, i));
+  /** number sets this learner already saw on one item */
+  const seenOn = (id: string) => new Set(state.attempts.filter((a) => a.templateId === id && a.nums).map((a) => a.nums as string));
 
   // ALT: twin question = same item, same structure, new numbers
   if (decision.rule === "ALT" && decision.twinOf) {
@@ -393,13 +420,14 @@ export function nextFromBank(state: EngineState, decision: Decision, rng: Rng): 
       lineAuto: true,
       isTwin: true,
       avoid: { a: src.a, b: src.b, list: src.list },
+      seen: seenOn(t.id),
     });
   }
 
   // PREREQ / REMEDIATION: easy S0 number line tasks
   if (decision.rule === "PREREQ" || decision.rule === "REMEDIATION") {
-    const t = pickTemplate("S0", 1, { avoidIds: lastIds, lastFormat: null, rng });
-    return instantiate(t, { fresh: true, rng, why: decision.reason, lineAuto: true, remediation: true });
+    const t = pickTemplate("S0", 1, { avoidIds: lastIds, lastFormat: null, rng, lastUsed });
+    return instantiate(t, { fresh: true, rng, why: decision.reason, lineAuto: true, remediation: true, seen: seenOn(t.id) });
   }
 
   const t = pickTemplate(decision.skill, decision.level, {
@@ -407,7 +435,8 @@ export function nextFromBank(state: EngineState, decision: Decision, rng: Rng): 
     lastFormat,
     prefer: wantedFormat(state, rng),
     rng,
+    lastUsed,
   });
   // first time an item is seen we use its authored numbers (e.g. the classic 5 - (-3)); later new numbers
-  return instantiate(t, { fresh: seenIds.has(t.id), rng, why: decision.reason, lineAuto: decision.lineAuto });
+  return instantiate(t, { fresh: seenIds.has(t.id), rng, why: decision.reason, lineAuto: decision.lineAuto, seen: seenOn(t.id) });
 }
