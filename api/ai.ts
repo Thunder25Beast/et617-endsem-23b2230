@@ -37,7 +37,7 @@ Feedback is kind, simple Hindi with English maths words. Never say "incorrect" o
 
 async function callGemini(system: string, user: string): Promise<unknown> {
   const key = process.env.GEMINI_API_KEY;
-  const model = process.env.LLM_MODEL || "gemini-2.5-flash";
+  const model = process.env.LLM_MODEL || "gemini-1.5-flash";
   if (!key) throw new Error("GEMINI_API_KEY missing");
 
   const ctrl = new AbortController();
@@ -56,7 +56,10 @@ async function callGemini(system: string, user: string): Promise<unknown> {
         }),
       },
     );
-    if (!res.ok) throw new Error(`gemini ${res.status}`);
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      throw new Error(`gemini ${res.status}: ${errBody.slice(0, 120)}`);
+    }
     const out = (await res.json()) as {
       candidates?: { content?: { parts?: { text?: string }[] } }[];
     };

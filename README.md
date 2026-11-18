@@ -37,7 +37,7 @@ bun run build
 | Name | Purpose |
 | --- | --- |
 | `GEMINI_API_KEY` | Gemini API key. Set it in Vercel project settings. Never commit it. |
-| `LLM_MODEL` | Model name, e.g. `gemini-2.5-flash` (the default). |
+| `LLM_MODEL` | Model name, e.g. `gemini-1.5-flash` (the default) or `gemini-2.0-flash`. |
 
 The Lovable preview has no `/api/ai`, so the app runs its labelled fallback there. "Demo mode" in About
 uses recorded AI replies (`src/data/demoAi.ts`), labelled "Demo response".
@@ -46,7 +46,7 @@ uses recorded AI replies (`src/data/demoAi.ts`), labelled "Demo response".
 ```text
 api/ai.ts                  Vercel serverless function (Gemini): generate_question, evaluate_explanation
 src/data/i18n.ts           all interface text, Hindi + English
-src/data/questions.ts      30 authored items (6 formats, 4 skills, 3 levels) + quick check
+src/data/questions.ts      28 authored items (6 formats, 4 skills, 3 levels) + quick check
 src/data/demoAi.ts         recorded sample AI outputs for demo mode
 src/engine/config.ts       every threshold, with comments
 src/engine/selector.ts     decision rule + question builder (twins, variants)
