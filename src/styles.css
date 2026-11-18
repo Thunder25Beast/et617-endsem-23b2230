@@ -1,0 +1,194 @@
+/*
+ * Tailwind v4 entry. Constraint C1: no web fonts, no remote CSS. We use the system font
+ * stack only (Android tablets already ship Devanagari fonts such as Noto Sans Devanagari).
+ */
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design direction: "school notebook". Warm paper background, deep ink text,
+ * marigold for actions, cool blue for NEGATIVE numbers and saffron for POSITIVE numbers,
+ * so the sign of a number is always visible by colour as well as by the minus sign.
+ */
+@theme inline {
+  --font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Devanagari",
+    "Nirmala UI", "Mangal", sans-serif;
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 3px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-deep: var(--primary-deep);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-rethink: var(--rethink);
+  --color-rethink-soft: var(--rethink-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-neg: var(--neg);
+  --color-neg-soft: var(--neg-soft);
+  --color-pos: var(--pos);
+  --color-pos-soft: var(--pos-soft);
+  --color-zero: var(--zero);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+}
+
+:root {
+  --radius: 1rem;
+  --background: oklch(0.972 0.018 85);
+  --foreground: oklch(0.27 0.045 258);
+  --card: oklch(0.993 0.008 85);
+  --card-foreground: oklch(0.27 0.045 258);
+  --popover: oklch(0.993 0.008 85);
+  --popover-foreground: oklch(0.27 0.045 258);
+  --primary: oklch(0.8 0.155 72);
+  --primary-foreground: oklch(0.27 0.06 55);
+  --primary-deep: oklch(0.62 0.15 60);
+  --secondary: oklch(0.47 0.085 210);
+  --secondary-foreground: oklch(0.98 0.01 210);
+  --muted: oklch(0.935 0.022 85);
+  --muted-foreground: oklch(0.47 0.035 258);
+  --accent: oklch(0.93 0.045 210);
+  --accent-foreground: oklch(0.32 0.07 215);
+  --destructive: oklch(0.55 0.17 28);
+  --destructive-foreground: oklch(0.98 0.01 28);
+  --success: oklch(0.52 0.13 152);
+  --success-soft: oklch(0.93 0.06 152);
+  --rethink: oklch(0.5 0.13 35);
+  --rethink-soft: oklch(0.94 0.04 45);
+  --warn: oklch(0.42 0.09 65);
+  --warn-soft: oklch(0.93 0.08 90);
+  --neg: oklch(0.5 0.16 255);
+  --neg-soft: oklch(0.92 0.045 255);
+  --pos: oklch(0.62 0.17 45);
+  --pos-soft: oklch(0.93 0.05 55);
+  --zero: oklch(0.35 0.03 258);
+  --border: oklch(0.86 0.03 80);
+  --input: oklch(0.84 0.03 80);
+  --ring: oklch(0.62 0.15 60);
+
+  /* Chunky "press" shadows instead of soft blur: cheap to render on old tablets. */
+  --shadow-press: 0 4px 0 0 var(--primary-deep);
+  --shadow-card: 0 3px 0 0 var(--border);
+  --shadow-key: 0 3px 0 0 var(--input);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    line-height: 1.55;
+    /* faint notebook ruling, pure CSS (no image) */
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 31px,
+      color-mix(in oklab, var(--secondary) 7%, transparent) 31px,
+      color-mix(in oklab, var(--secondary) 7%, transparent) 32px
+    );
+  }
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer components {
+  /* Paper card used for every task and lesson. */
+  .paper {
+    background: var(--card);
+    border: 2px solid var(--border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-card);
+  }
+  /* "Key idea" box: dashed marigold border, the one idea of the screen. */
+  .key-box {
+    background: color-mix(in oklab, var(--primary) 14%, var(--card));
+    border: 2px dashed var(--primary-deep);
+    border-radius: var(--radius-lg);
+  }
+  /* Highlighted key word inline (e.g. "बाएँ", "उधार"). */
+  .kw {
+    display: inline-block;
+    padding: 0 0.4em;
+    margin: 0 0.1em;
+    border: 2px solid var(--secondary);
+    border-radius: 0.5em;
+    background: var(--accent);
+    color: var(--accent-foreground);
+    font-weight: 700;
+    line-height: 1.4;
+  }
+  .num-neg {
+    color: var(--neg);
+    font-weight: 800;
+  }
+  .num-pos {
+    color: var(--pos);
+    font-weight: 800;
+  }
+  .num-zero {
+    color: var(--zero);
+    font-weight: 800;
+  }
+  .step-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    background: var(--secondary);
+    color: var(--secondary-foreground);
+    font-weight: 800;
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.animate-pop {
+  animation: pop-in 180ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-pop {
+    animation: none;
+  }
+}
