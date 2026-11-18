@@ -39,14 +39,16 @@ async function callGemini(system: string, user: string): Promise<unknown> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY missing");
 
-  // Free Tier models: Gemini 3.8 Flash (primary), 3.5 Flash-Lite, 1.5 Flash, 2.5 Flash-Lite
+  // Free Tier models supported by Google AI Studio
   const envModel = process.env.LLM_MODEL;
   const models = Array.from(
     new Set(
       [
         envModel && envModel !== "gemini-2.5-flash" ? envModel : null,
         "gemini-3.8-flash",
+        "gemini-3.6-flash",
         "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite",
         "gemini-1.5-flash",
         "gemini-2.5-flash-lite",
       ].filter(Boolean) as string[],
@@ -74,8 +76,9 @@ async function callGemini(system: string, user: string): Promise<unknown> {
       if (!res.ok) {
         const errBody = await res.text().catch(() => "");
         lastError = `gemini [${model}] ${res.status}: ${errBody.slice(0, 120)}`;
-        if (res.status === 404) {
-          // If this model is not available, try the next free tier model
+        // If 404 (model not found), 503 (model temporarily overloaded), or 429 (rate limited),
+        // try the next free tier model in the cascade immediately
+        if (res.status === 404 || res.status === 503 || res.status === 429) {
           continue;
         }
         throw new Error(lastError);
@@ -106,7 +109,7 @@ export default async function handler(req: Request): Promise<Response> {
       keyPrefix: key.slice(0, 8) + "…",
       keyLength: key.length,
       primaryModel,
-      supportedModels: ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-1.5-flash", "gemini-2.5-flash-lite"],
+      supportedModels: ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-1.5-flash", "gemini-2.5-flash-lite"],
       env: Object.keys(process.env).filter(k => k.includes("GEMINI") || k.includes("LLM")).sort(),
     });
   }
