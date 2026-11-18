@@ -70,7 +70,10 @@ async function callAI<T>(
       signal: ctrl.signal,
     });
     const isJson = (res.headers.get("content-type") ?? "").includes("application/json");
-    if (!res.ok || !isJson) return fail(`http ${res.status}`);
+    if (!res.ok || !isJson) {
+      const detail = isJson ? ((await res.json().catch(() => ({}))) as { error?: string }).error : undefined;
+      return fail(`http ${res.status}${detail ? ` — ${detail}` : ""}`);
+    }
     const text = await res.text();
     setSession({ bytes: getSession().bytes + byteLen(text) });
     const ms = Date.now() - started;

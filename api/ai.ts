@@ -36,7 +36,8 @@ M2 = thinks subtraction always makes a number smaller (e.g. 5 - (-3) = 2).
 Feedback is kind, simple Hindi with English maths words. Never say "incorrect" or "गलत जवाब"; say "दोबारा सोचते हैं".`;
 
 async function callGemini(system: string, user: string): Promise<unknown> {
-  const key = process.env.GEMINI_API_KEY;
+  // Trim spaces and stray quotes in case the key was pasted with them.
+  const key = (process.env.GEMINI_API_KEY ?? "").trim().replace(/^["']|["']$/g, "");
   if (!key) throw new Error("GEMINI_API_KEY missing");
 
   // Free Tier models supported by Google AI Studio
@@ -137,8 +138,58 @@ async function callGemini(system: string, user: string): Promise<unknown> {
 export default async function handler(req: Request): Promise<Response> {
   // GET /api/ai → diagnostic: is the key set? (never reveals the actual key)
   if (req.method === "GET") {
-    const key = process.env.GEMINI_API_KEY ?? "";
+    const key = (process.env.GEMINI_API_KEY ?? "").trim();
     const primaryModel = process.env.LLM_MODEL || "gemini-3.8-flash";
+
+    // GET /api/ai?test=1 → probe every cascade model in parallel with a tiny prompt and list
+    // which models this key can actually use. Shows status, time and the error text per model.
+    if (new URL(req.url).searchParams.get("test") && key) {
+      const base = "https://generativelanguage.googleapis.com/v1beta/models";
+      const cascade = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+      const timed = async (url: string, init?: RequestInit) => {
+        const t0 = Date.now();
+        try {
+          const r = await fetch(url, { ...init, signal: AbortSignal.timeout(9000) });
+          return { status: r.status, ms: Date.now() - t0, body: await r.text() };
+        } catch (e) {
+          return { status: 0, ms: Date.now() - t0, body: e instanceof Error ? e.message : "fetch failed" };
+        }
+      };
+      const [list, ...probes] = await Promise.all([
+        timed(`${base}?pageSize=200`, { headers: { "x-goog-api-key": key } }),
+        ...cascade.map((m) =>
+          timed(`${base}/${m}:generateContent`, {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-goog-api-key": key },
+            body: JSON.stringify({
+              contents: [{ role: "user", parts: [{ text: 'Reply with JSON {"ok":1}' }] }],
+              generationConfig: { responseMimeType: "application/json", maxOutputTokens: 2048 },
+            }),
+          }),
+        ),
+      ]);
+      let available: string[] = [];
+      try {
+        const parsed = JSON.parse(list.body) as { models?: { name: string; supportedGenerationMethods?: string[] }[] };
+        available = (parsed.models ?? [])
+          .filter((m) => m.supportedGenerationMethods?.includes("generateContent") && m.name.includes("flash"))
+          .map((m) => m.name.replace("models/", ""));
+      } catch {
+        /* list failed; status below says why */
+      }
+      return json(200, {
+        listStatus: list.status,
+        listError: list.status === 200 ? undefined : list.body.slice(0, 200),
+        availableFlashModels: available,
+        probes: cascade.map((m, i) => ({
+          model: m,
+          status: probes[i]!.status,
+          ms: probes[i]!.ms,
+          detail: probes[i]!.status === 200 ? "works" : probes[i]!.body.slice(0, 160),
+        })),
+      });
+    }
+
     return json(200, {
       ok: true,
       keySet: key.length > 0,
