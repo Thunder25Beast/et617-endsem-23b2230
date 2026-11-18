@@ -10,6 +10,9 @@ export const config = { runtime: "edge" };
 
 const MAX_BODY = 2048; // bytes, same limit as the client
 const UPSTREAM_DEADLINE_MS = 7000; // whole model cascade, a little under the client's 8 s timeout
+const PER_MODEL_MS = 3500; // one slow or hanging model must not eat the whole deadline
+
+const CASCADE = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-3.5-flash-lite", "gemini-3.8-flash"];
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), {
@@ -40,21 +43,9 @@ async function callGemini(system: string, user: string): Promise<unknown> {
   const key = (process.env.GEMINI_API_KEY ?? "").trim().replace(/^["']|["']$/g, "");
   if (!key) throw new Error("GEMINI_API_KEY missing");
 
-  // Free Tier models supported by Google AI Studio
-  const envModel = process.env.LLM_MODEL;
-  const models = Array.from(
-    new Set(
-      [
-        envModel && envModel !== "gemini-2.5-flash" ? envModel : null,
-        "gemini-3.8-flash",
-        "gemini-3.6-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-3.1-flash-lite",
-        "gemini-2.5-flash",
-        "gemini-2.5-flash-lite",
-      ].filter(Boolean) as string[],
-    ),
-  );
+  // Order comes from GET /api/ai?test=1 on the live key: fastest reliable model first.
+  // (3.8-flash often 503s, 3.6-flash hangs, 2.5-flash-lite is 404 for new users.)
+  const models = Array.from(new Set([process.env.LLM_MODEL, ...CASCADE].filter(Boolean) as string[]));
 
   // Newer Flash models "think" before answering, and thinking tokens count against
   // maxOutputTokens. With a small limit the JSON came back cut off or empty, JSON.parse
@@ -75,7 +66,7 @@ async function callGemini(system: string, user: string): Promise<unknown> {
       const left = deadline - Date.now();
       if (left < 500) throw new Error(`deadline reached; last: ${lastError}`);
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), left);
+      const timer = setTimeout(() => ctrl.abort(), Math.min(left, PER_MODEL_MS));
       try {
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
@@ -124,7 +115,7 @@ async function callGemini(system: string, user: string): Promise<unknown> {
           break;
         }
       } catch (e) {
-        if (e instanceof Error && e.name === "AbortError") throw new Error(`timeout; last: ${lastError}`);
+        if (e instanceof Error && e.name === "AbortError") { lastError = `gemini [${model}] timed out`; console.warn(lastError); break; }
         lastError = `gemini [${model}] ${e instanceof Error ? e.message : "fetch failed"}`;
         break;
       } finally {
@@ -139,13 +130,13 @@ export default async function handler(req: Request): Promise<Response> {
   // GET /api/ai → diagnostic: is the key set? (never reveals the actual key)
   if (req.method === "GET") {
     const key = (process.env.GEMINI_API_KEY ?? "").trim();
-    const primaryModel = process.env.LLM_MODEL || "gemini-3.8-flash";
+    const primaryModel = process.env.LLM_MODEL || CASCADE[0];
 
     // GET /api/ai?test=1 → probe every cascade model in parallel with a tiny prompt and list
     // which models this key can actually use. Shows status, time and the error text per model.
     if (new URL(req.url).searchParams.get("test") && key) {
       const base = "https://generativelanguage.googleapis.com/v1beta/models";
-      const cascade = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+      const cascade = CASCADE;
       const timed = async (url: string, init?: RequestInit) => {
         const t0 = Date.now();
         try {
@@ -195,7 +186,7 @@ export default async function handler(req: Request): Promise<Response> {
       keySet: key.length > 0,
       keyLength: key.length,
       primaryModel,
-      supportedModels: ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
+      supportedModels: CASCADE,
       env: Object.keys(process.env).filter(k => k.includes("GEMINI") || k.includes("LLM")).sort(),
     });
   }
